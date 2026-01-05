@@ -4,7 +4,7 @@ const supabaseUrl = process.env.SUPABASE_URL!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 if (!supabaseUrl || !serviceRoleKey) {
-  throw new Error("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY が未設定です（Vercel環境変数を確認）");
+  throw new Error("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY が未設定です");
 }
 
 export const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
