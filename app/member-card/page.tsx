@@ -1,21 +1,29 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import QRCode from "qrcode.react";
+import { QRCodeCanvas } from "qrcode.react";
 
 export default function MemberCardPage() {
-  const searchParams = useSearchParams();
-  const memberId = searchParams.get("member_id");
+  const sp = useSearchParams();
+  const memberId = sp.get("member_id");
 
-  const [qrToken, setQrToken] = useState<string | null>(null);
-  const [error, setError] = useState("");
+  const [qrToken, setQrToken] = useState<string>("");
+  const [apiJson, setApiJson] = useState<any>(null);
+  const [err, setErr] = useState<string>("");
 
   useEffect(() => {
-    if (!memberId) return;
-
-    const fetchQr = async () => {
+    const run = async () => {
       try {
+        setErr("");
+        setApiJson(null);
+        setQrToken("");
+
+        if (!memberId) {
+          setErr("member_id がURLにありません（/member-card?member_id=... になっているか確認）");
+          return;
+        }
+
         const res = await fetch("/api/qr-token", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -23,25 +31,43 @@ export default function MemberCardPage() {
         });
 
         const json = await res.json();
-        if (!json.ok) throw new Error("QR生成失敗");
+        setApiJson({ status: res.status, json });
+
+        if (!res.ok || !json.ok) {
+          throw new Error(json?.error ?? "qr-token API failed");
+        }
 
         setQrToken(json.qr_token);
       } catch (e: any) {
-        setError(e.message || "エラー");
+        setErr(e?.message ?? String(e));
       }
     };
 
-    fetchQr();
+    run();
   }, [memberId]);
 
-  if (error) return <p style={{ color: "red" }}>{error}</p>;
-  if (!qrToken) return <p>QR生成中…</p>;
-
   return (
-    <main style={{ padding: 20 }}>
+    <main style={{ padding: 20, fontFamily: "system-ui" }}>
       <h2>会員証</h2>
-      <QRCode value={qrToken} size={200} />
-      <p style={{ marginTop: 10 }}>受付でこのQRを提示してください</p>
+
+      <div style={{ marginBottom: 12 }}>
+        <div><b>member_id:</b> {memberId ?? "(none)"}</div>
+        <div><b>qr_token:</b> {qrToken ? "(generated)" : "(not yet)"}</div>
+      </div>
+
+      {err && <p style={{ color: "red" }}>ERROR: {err}</p>}
+
+      {qrToken && (
+        <div style={{ marginTop: 16 }}>
+          <QRCodeCanvas value={qrToken} size={220} />
+          <p style={{ marginTop: 10 }}>受付でこのQRを提示してください</p>
+        </div>
+      )}
+
+      <hr style={{ margin: "20px 0" }} />
+      <pre style={{ fontSize: 12, whiteSpace: "pre-wrap" }}>
+        {JSON.stringify(apiJson, null, 2)}
+      </pre>
     </main>
   );
 }
