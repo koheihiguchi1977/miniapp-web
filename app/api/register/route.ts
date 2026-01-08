@@ -1,36 +1,45 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const line_user_id = String(body?.line_user_id ?? "");
-    const display_name = String(body?.display_name ?? "");
+    const body = await req.json().catch(() => ({}));
+    const userId = body?.userId as string | undefined;
+    const displayName = body?.displayName as string | undefined;
 
-    if (!line_user_id) {
-      return NextResponse.json({ ok: false, error: "line_user_id is required" }, { status: 400 });
+    if (!userId) {
+      return NextResponse.json({ ok: false, error: "userId がありません" }, { status: 400 });
     }
 
-    // 既存があれば取得、なければ作成（upsert）
-    const { data, error } = await supabaseAdmin
+    const supabaseAdmin = getSupabaseAdmin();
+
+    const { data: existing, error: selErr } = await supabaseAdmin
       .from("members")
-      .upsert(
-        { line_user_id, display_name },
-        { onConflict: "line_user_id" }
-      )
-      .select("id, line_user_id, display_name")
+      .select("member_id,user_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (selErr) throw selErr;
+
+    if (existing?.member_id) {
+      return NextResponse.json({ ok: true, member_id: existing.member_id, existed: true });
+    }
+
+    const memberId = `M-${Date.now()}`;
+
+    const { data: inserted, error: insErr } = await supabaseAdmin
+      .from("members")
+      .insert({
+        member_id: memberId,
+        user_id: userId,
+        display_name: displayName ?? null,
+      })
+      .select("member_id")
       .single();
 
-    if (error) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
-    }
+    if (insErr) throw insErr;
 
-    return NextResponse.json({
-      ok: true,
-      member_id: data.id,
-      line_user_id: data.line_user_id,
-      display_name: data.display_name,
-    });
+    return NextResponse.json({ ok: true, member_id: inserted.member_id, existed: false });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? String(e) }, { status: 500 });
   }
