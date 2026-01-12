@@ -3,44 +3,72 @@ import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const userId = body?.userId as string | undefined;
-    const displayName = body?.displayName as string | undefined;
+    const body = await req.json();
 
-    if (!userId) {
-      return NextResponse.json({ ok: false, error: "userId がありません" }, { status: 400 });
+    const line_user_id = body.user_id ?? body.userId;
+    const display_name = body.display_name ?? body.displayName;
+
+    if (!line_user_id) {
+      return NextResponse.json(
+        { ok: false, error: "user_id がありません（LINEの userId を送ってください）" },
+        { status: 400 }
+      );
     }
 
-    const supabaseAdmin = getSupabaseAdmin();
+    if (!display_name) {
+      return NextResponse.json(
+        { ok: false, error: "display_name がありません" },
+        { status: 400 }
+      );
+    }
 
-    const { data: existing, error: selErr } = await supabaseAdmin
+    const supabase = getSupabaseAdmin();
+
+    // 既存会員チェック（LINEユーザーIDで）
+    const { data: existing, error: selErr } = await supabase
       .from("members")
-      .select("member_id,user_id")
-      .eq("user_id", userId)
+      .select("id")
+      .eq("line_user_id", line_user_id)
       .maybeSingle();
 
-    if (selErr) throw selErr;
-
-    if (existing?.member_id) {
-      return NextResponse.json({ ok: true, member_id: existing.member_id, existed: true });
+    if (selErr) {
+      console.error("select error:", selErr);
+      return NextResponse.json({ ok: false, error: selErr.message }, { status: 500 });
     }
 
-    const memberId = `M-${Date.now()}`;
+    if (existing?.id) {
+      return NextResponse.json({
+        ok: true,
+        member_id: existing.id,
+        already: true,
+      });
+    }
 
-    const { data: inserted, error: insErr } = await supabaseAdmin
+    // 新規登録
+    const { data, error } = await supabase
       .from("members")
       .insert({
-        member_id: memberId,
-        user_id: userId,
-        display_name: displayName ?? null,
+        line_user_id,
+        display_name,
       })
-      .select("member_id")
+      .select("id")
       .single();
 
-    if (insErr) throw insErr;
+    if (error) {
+      console.error("insert error:", error);
+      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    }
 
-    return NextResponse.json({ ok: true, member_id: inserted.member_id, existed: false });
+    return NextResponse.json({
+      ok: true,
+      member_id: data.id,
+      already: false,
+    });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? String(e) }, { status: 500 });
+    console.error("register api error:", e);
+    return NextResponse.json(
+      { ok: false, error: e.message ?? "unknown error" },
+      { status: 500 }
+    );
   }
 }
