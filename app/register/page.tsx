@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import liff from "@line/liff";
 import { useRouter } from "next/navigation";
 
-type Status = "initializing" | "ready" | "registering" | "error";
+type Status = "initializing" | "checking" | "ready" | "registering" | "error";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -15,12 +15,12 @@ export default function RegisterPage() {
   const [lineUserId, setLineUserId] = useState("");
   const [lineDisplayName, setLineDisplayName] = useState("");
 
-  // Form (Teetime風)
+  // Form
   const [fullName, setFullName] = useState("");
   const [fullNameKana, setFullNameKana] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
-  const [birthday, setBirthday] = useState(""); // YYYY-MM-DD
+  const [birthday, setBirthday] = useState("");
   const [zip, setZip] = useState("");
   const [pref, setPref] = useState("");
   const [city, setCity] = useState("");
@@ -46,15 +46,37 @@ export default function RegisterPage() {
         setLineUserId(profile.userId);
         setLineDisplayName(profile.displayName);
 
+        // ★ここが追加：登録済みチェック
+        setStatus("checking");
+
+        const res = await fetch("/api/me", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ line_user_id: profile.userId }),
+        });
+
+        const json = await res.json();
+
+        if (!res.ok || !json.ok) {
+          throw new Error(json?.error ?? "me api failed");
+        }
+
+        if (json.exists && json.member?.id) {
+          // 既に会員なら、フォームを見せずに即会員証へ
+          router.replace(`/member-card?member_id=${json.member.id}`);
+          return;
+        }
+
+        // 未登録ならフォーム表示
         setStatus("ready");
       } catch (e: any) {
-        setError(e.message || "LIFF初期化エラー");
+        setError(e.message || "初期化エラー");
         setStatus("error");
       }
     };
 
     init();
-  }, []);
+  }, [router]);
 
   const register = async () => {
     try {
@@ -65,11 +87,8 @@ export default function RegisterPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          // 正（推奨）：line_user_id を採用
           line_user_id: lineUserId,
           display_name: lineDisplayName,
-
-          // Teetime風入力
           full_name: fullName,
           full_name_kana: fullNameKana,
           phone,
@@ -90,7 +109,7 @@ export default function RegisterPage() {
         throw new Error(json?.error ?? "register failed");
       }
 
-      router.push(`/member-card?member_id=${json.member_id}`);
+      router.replace(`/member-card?member_id=${json.member_id}`);
     } catch (e: any) {
       setError(e.message || "登録エラー");
       setStatus("error");
@@ -98,15 +117,16 @@ export default function RegisterPage() {
   };
 
   if (status === "initializing") return <p style={{ padding: 20 }}>初期化中…</p>;
+  if (status === "checking") return <p style={{ padding: 20 }}>会員情報を確認中…</p>;
   if (status === "error")
     return (
       <main style={{ padding: 20 }}>
-        <h2>会員登録</h2>
+        <h2>LINE会員登録</h2>
         <p style={{ color: "red" }}>{error}</p>
-        <p>LINE内で開いているか、LIFF設定（Endpoint URL / Scope / LIFF ID）を確認してください。</p>
       </main>
     );
 
+  // ready = 未登録時のみフォーム表示
   return (
     <main style={{ padding: 20, maxWidth: 520, margin: "0 auto" }}>
       <h2>LINE会員登録</h2>
